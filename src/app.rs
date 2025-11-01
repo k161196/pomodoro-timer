@@ -3,7 +3,6 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use chrono::Utc;
 
-use crate::celebration::CelebrationWindow;
 use crate::config::Config;
 use crate::notifications;
 use crate::persistence::Persistence;
@@ -99,13 +98,6 @@ impl PomodoroApp {
 
                 if just_completed {
                     notifications::log_info("Timer completed!");
-
-                    // Show celebration animation
-                    let _ = cx.update(|cx| {
-                        if let Err(e) = CelebrationWindow::show(cx) {
-                            notifications::log_error(&format!("Failed to show celebration: {}", e));
-                        }
-                    });
 
                     // Send notification and transition to Idle state
                     {

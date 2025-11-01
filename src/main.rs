@@ -1,7 +1,6 @@
 use gpui::*;
 
 mod app;
-mod celebration;
 mod config;
 mod notifications;
 mod persistence;
