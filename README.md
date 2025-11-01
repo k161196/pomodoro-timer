@@ -14,20 +14,54 @@ A beautiful, minimalist Pomodoro timer application built with Rust and GPUI. Fea
 
 ## Prerequisites
 
+### Linux
 - Rust (latest stable)
 - GPUI v0.2.0 dependencies
-- Linux with desktop notification support
+- Desktop notification support
+
+### macOS
+- Rust (latest stable)
+- Xcode Command Line Tools: `xcode-select --install`
+- macOS 10.15 (Catalina) or later
+
+**Note:** macOS requires Metal rendering backend, which is included with Xcode Command Line Tools.
 
 ## Installation
 
-### 1. Clone and Build
+### Linux
+
+#### 1. Clone and Build
 
 ```bash
 cd ~/projects/pomodoro-timer
 cargo build --release
 ```
 
-### 2. Install Desktop File (Optional)
+### macOS
+
+#### 1. Install Prerequisites
+
+```bash
+# Install Xcode Command Line Tools (if not already installed)
+xcode-select --install
+
+# Install Rust (if not already installed)
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+```
+
+#### 2. Clone and Build
+
+```bash
+cd ~/projects/pomodoro-timer
+cargo build --release
+```
+
+**macOS Build Notes:**
+- First build may take longer as it compiles Metal shaders
+- The app uses native macOS notifications
+- Window management respects macOS system preferences
+
+#### 2. Install Desktop File (Linux Only - Optional)
 
 Create a desktop entry for easy launching:
 
@@ -52,7 +86,7 @@ After creating the file, update the desktop database:
 update-desktop-database ~/.local/share/applications/
 ```
 
-### 3. Configure Hyprland (Optional but Recommended)
+#### 3. Configure Hyprland (Linux Only - Optional but Recommended)
 
 Add the following to your Hyprland config (`~/.config/hypr/hyprland.conf`) for the best experience:
 
@@ -78,13 +112,27 @@ bind = SUPER, P, exec, ~/projects/pomodoro-timer/target/release/pomodoro-timer
 - `pin` - **Pins the window to all workspaces** (stays visible when switching workspaces)
 - `noblur` - Disables background blur for better performance
 
-### 4. Run
+## Running the App
+
+### Linux
 
 ```bash
 ./target/release/pomodoro-timer
 ```
 
 Or use the Hyprland keybind (Super+P) if configured above.
+
+### macOS
+
+```bash
+./target/release/pomodoro-timer
+```
+
+**macOS Notes:**
+- The app will request notification permissions on first launch
+- Window can be moved and resized like any native macOS app
+- Use Cmd+Q to quit
+- Consider adding to Login Items for auto-start (System Preferences → Users & Groups → Login Items)
 
 ## Usage
 
