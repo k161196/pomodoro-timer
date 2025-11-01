@@ -3780,6 +3780,7 @@ dependencies = [
  "chrono",
  "gpui",
  "notify-rust",
+ "parking_lot",
  "serde",
  "serde_json",
  "tokio",

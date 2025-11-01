@@ -1,6 +1,6 @@
 use gpui::*;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use parking_lot::Mutex;
 use chrono::Utc;
 
 use crate::config::Config;
@@ -62,7 +62,7 @@ impl PomodoroApp {
                 }).await;
 
                 let (is_running, just_completed) = {
-                    let mut info = session_info_for_tick.lock().await;
+                    let mut info = session_info_for_tick.lock();
                     let is_running = info.current_state.is_running();
 
                     let just_completed = if is_running {
@@ -100,7 +100,7 @@ impl PomodoroApp {
                     notifications::log_info("Timer completed!");
 
                     // Send notification
-                    let info = session_info_for_tick.lock().await;
+                    let info = session_info_for_tick.lock();
                     if config_for_tick.enable_notifications {
                         match info.current_state {
                             TimerState::Working => notifications::notify_work_complete(),
@@ -128,7 +128,7 @@ impl PomodoroApp {
                     std::thread::sleep(std::time::Duration::from_secs(5));
                 }).await;
 
-                let info = session_info_clone.lock().await;
+                let info = session_info_clone.lock();
                 if let Err(e) = Persistence::save(&info) {
                     notifications::log_error(&format!("Failed to auto-save state: {}", e));
                 }
@@ -155,7 +155,7 @@ impl PomodoroApp {
 
             // Reset to idle and create new timer with new ID
             {
-                let mut info = session_info.lock().await;
+                let mut info = session_info.lock();
                 info.current_state = TimerState::Idle;
                 info.time_remaining_secs = 0;
                 info.current_id = Uuid::new_v4().to_string();  // Generate new UUID
@@ -165,7 +165,7 @@ impl PomodoroApp {
             }
 
             // Save state
-            let info = session_info.lock().await;
+            let info = session_info.lock();
             if let Err(e) = Persistence::save(&info) {
                 notifications::log_error(&format!("Failed to save state: {}", e));
             }
@@ -185,7 +185,7 @@ impl PomodoroApp {
 
         cx.spawn(async move |this, cx| {
             let (current_state, is_focus_mode) = {
-                let info = session_info.lock().await;
+                let info = session_info.lock();
                 (info.current_state.clone(), info.is_focus_mode)
             };
 
@@ -213,7 +213,7 @@ impl PomodoroApp {
             }
 
             // Save state
-            let info = session_info.lock().await;
+            let info = session_info.lock();
             if let Err(e) = Persistence::save(&info) {
                 notifications::log_error(&format!("Failed to save state: {}", e));
             }
@@ -230,7 +230,7 @@ impl PomodoroApp {
         cx.spawn(async move |this, cx| {
             // Stop timer and add to history, then navigate to previous
             {
-                let mut info = session_info.lock().await;
+                let mut info = session_info.lock();
 
                 // If running, stop and add to history
                 if info.current_state.is_running() {
@@ -250,7 +250,7 @@ impl PomodoroApp {
             }
 
             // Save state
-            let info = session_info.lock().await;
+            let info = session_info.lock();
             if let Err(e) = Persistence::save(&info) {
                 notifications::log_error(&format!("Failed to save state: {}", e));
             }
@@ -271,7 +271,7 @@ impl PomodoroApp {
             notifications::log_info("Reset timer");
 
             // Save state
-            let info = session_info.lock().await;
+            let info = session_info.lock();
             if let Err(e) = Persistence::save(&info) {
                 notifications::log_error(&format!("Failed to save state: {}", e));
             }
@@ -288,7 +288,7 @@ impl PomodoroApp {
 
         cx.spawn(async move |this, cx| {
             {
-                let mut info = session_info.lock().await;
+                let mut info = session_info.lock();
 
                 // Only proceed if we're NOT already in focus mode
                 if info.is_focus_mode {
@@ -309,7 +309,7 @@ impl PomodoroApp {
             notifications::log_info("Switched to focus mode");
 
             // Save state
-            let info = session_info.lock().await;
+            let info = session_info.lock();
             if let Err(e) = Persistence::save(&info) {
                 notifications::log_error(&format!("Failed to save state: {}", e));
             }
@@ -326,7 +326,7 @@ impl PomodoroApp {
 
         cx.spawn(async move |this, cx| {
             {
-                let mut info = session_info.lock().await;
+                let mut info = session_info.lock();
 
                 // Only proceed if we're NOT already in rest mode
                 if !info.is_focus_mode {
@@ -347,7 +347,7 @@ impl PomodoroApp {
             notifications::log_info("Switched to rest mode");
 
             // Save state
-            let info = session_info.lock().await;
+            let info = session_info.lock();
             if let Err(e) = Persistence::save(&info) {
                 notifications::log_error(&format!("Failed to save state: {}", e));
             }
@@ -360,7 +360,7 @@ impl PomodoroApp {
 
     pub fn handle_edit_label(&mut self, cx: &mut Context<'_, Self>) {
         // Load current label into edit buffer and enter edit mode
-        let current_label = self.session_info.blocking_lock().current_label.clone();
+        let current_label = self.session_info.lock().current_label.clone();
         self.label_input = current_label;
         self.is_editing_label = true;
         cx.notify();
@@ -373,7 +373,7 @@ impl PomodoroApp {
 
         cx.spawn(async move |_this, cx| {
             {
-                let mut info = session_info.lock().await;
+                let mut info = session_info.lock();
                 info.current_label = label;
             }
             let _ = cx.update(|_cx| {});
@@ -408,7 +408,7 @@ impl Render for PomodoroApp {
         self.focus_handle.focus(window);
 
         // Get current session info (blocking is ok for render)
-        let session_info = self.session_info.blocking_lock().clone();
+        let session_info = self.session_info.lock().clone();
         let total_duration = self.get_total_duration(&session_info.current_state);
         let is_editing = self.is_editing_label;
 
