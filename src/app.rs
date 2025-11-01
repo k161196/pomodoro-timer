@@ -133,8 +133,9 @@ impl PomodoroApp {
                             notifications::log_info("Notifications are disabled in config");
                         }
 
-                        // Transition to Idle state when timer completes
+                        // Transition to Idle state and enable celebration breathing effect
                         info.current_state = TimerState::Idle;
+                        info.show_celebration = true;
                         info.last_updated = Utc::now();
 
                         // Save state
@@ -143,7 +144,7 @@ impl PomodoroApp {
                         }
                     }
 
-                    // Trigger UI update to show Idle state
+                    // Trigger UI update to show Idle state with celebration
                     let _ = this.update(cx, |_, cx| cx.notify());
                 }
             }
@@ -412,6 +413,27 @@ impl PomodoroApp {
 
         self.label_input.clear();
         self.is_editing_label = false;
+        cx.notify();
+    }
+
+    pub fn handle_mouse_over(&mut self, cx: &mut Context<'_, Self>) {
+        // Disable celebration breathing effect on mouse over
+        let session_info = self.session_info.clone();
+
+        cx.spawn(async move |_this, cx| {
+            {
+                let mut info = session_info.lock();
+                if info.show_celebration {
+                    info.show_celebration = false;
+                    // Save state
+                    if let Err(e) = Persistence::save(&info) {
+                        notifications::log_error(&format!("Failed to save state: {}", e));
+                    }
+                }
+            }
+            let _ = cx.update(|_cx| {});
+        }).detach();
+
         cx.notify();
     }
 

@@ -76,6 +76,8 @@ pub struct SessionInfo {
     pub current_label: String,     // Label for current timer
     pub history: Vec<CompletedTimer>, // History of completed timers
     pub history_index: Option<usize>, // Current index when browsing history (None = current timer)
+    #[serde(default)]
+    pub show_celebration: bool,    // True when timer just completed (breathing effect)
 }
 
 impl SessionInfo {
@@ -92,6 +94,7 @@ impl SessionInfo {
             current_label: String::new(),
             history: Vec::new(),
             history_index: None,
+            show_celebration: false,
         }
     }
 

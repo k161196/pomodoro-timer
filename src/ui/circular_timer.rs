@@ -1,5 +1,6 @@
 use gpui::*;
 use gpui::prelude::*;
+use std::time::Duration;
 use crate::state::SessionInfo;
 use crate::app::PomodoroApp;
 use crate::theme::Theme;
@@ -320,8 +321,11 @@ impl IntoElement for CircularTimer {
 
     fn into_element(self) -> Self::Element {
         let is_idle = matches!(self.session_info.current_state, crate::state::TimerState::Idle);
+        let show_celebration = self.session_info.show_celebration;
+        let view = self.view.clone();
 
-        div()
+        // Build the main content element
+        let mut base_div = div()
             .w_full()
             .h_full()
             .flex()
@@ -332,12 +336,51 @@ impl IntoElement for CircularTimer {
             .bg(self.theme.background)
             .rounded(px(16.0))  // Smaller rounded corners
             .border_2()
-            .border_color(self.theme.border)
-            .when(is_idle, |div| {
-                div.child(self.render_idle_state())
-            })
-            .when(!is_idle, |div| {
-                div.child(self.render_active_timer())
-            })
+            .border_color(self.theme.border);
+
+        // Add children based on state
+        if is_idle {
+            base_div = base_div.child(self.render_idle_state());
+        } else {
+            base_div = base_div.child(self.render_active_timer());
+        }
+
+        // Wrap in a container with mouse handler
+        // Apply breathing animation conditionally
+        if show_celebration {
+            div()
+                .w_full()
+                .h_full()
+                .on_mouse_move(move |_event, _window, cx| {
+                    cx.update_entity(&view, |app, cx| {
+                        app.handle_mouse_over(cx);
+                    });
+                })
+                .child(
+                    base_div.with_animation(
+                        "celebration-breathing",
+                        Animation::new(Duration::from_millis(2000))
+                            .repeat()
+                            .with_easing(ease_in_out),
+                        |inner_div, delta| {
+                            // Red breathing effect: pulse between background and red
+                            let intensity = (delta * std::f32::consts::PI * 2.0).sin() * 0.5 + 0.5; // 0.0 to 1.0
+                            // Create red overlay with varying opacity
+                            let red_alpha = intensity * 0.4; // Max 40% red overlay
+                            inner_div.bg(rgba(0xff000000 | ((red_alpha * 255.0) as u32)))
+                        }
+                    )
+                )
+        } else {
+            div()
+                .w_full()
+                .h_full()
+                .on_mouse_move(move |_event, _window, cx| {
+                    cx.update_entity(&view, |app, cx| {
+                        app.handle_mouse_over(cx);
+                    });
+                })
+                .child(base_div)
+        }
     }
 }
