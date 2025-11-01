@@ -99,21 +99,52 @@ impl PomodoroApp {
                 if just_completed {
                     notifications::log_info("Timer completed!");
 
-                    // Send notification
-                    let info = session_info_for_tick.lock();
-                    if config_for_tick.enable_notifications {
-                        match info.current_state {
-                            TimerState::Working => notifications::notify_work_complete(),
-                            TimerState::ShortBreak => notifications::notify_break_complete(),
-                            TimerState::LongBreak => notifications::notify_long_break_complete(),
-                            _ => {}
+                    // Send notification and transition to Idle state
+                    {
+                        let mut info = session_info_for_tick.lock();
+
+                        notifications::log_info(&format!(
+                            "Timer completion detected. State: {:?}, Notifications enabled: {}",
+                            info.current_state, config_for_tick.enable_notifications
+                        ));
+
+                        if config_for_tick.enable_notifications {
+                            match info.current_state {
+                                TimerState::Working => {
+                                    notifications::log_info("Triggering work complete notification");
+                                    notifications::notify_work_complete();
+                                }
+                                TimerState::ShortBreak => {
+                                    notifications::log_info("Triggering break complete notification");
+                                    notifications::notify_break_complete();
+                                }
+                                TimerState::LongBreak => {
+                                    notifications::log_info("Triggering long break complete notification");
+                                    notifications::notify_long_break_complete();
+                                }
+                                _ => {
+                                    notifications::log_info(&format!(
+                                        "No notification for state: {:?}",
+                                        info.current_state
+                                    ));
+                                }
+                            }
+                        } else {
+                            notifications::log_info("Notifications are disabled in config");
+                        }
+
+                        // Transition to Idle state when timer completes
+                        info.current_state = TimerState::Idle;
+                        info.last_updated = Utc::now();
+
+                        // Save state
+                        if let Err(e) = Persistence::save(&info) {
+                            notifications::log_error(&format!("Failed to save state: {}", e));
                         }
                     }
 
-                    // Save state
-                    if let Err(e) = Persistence::save(&info) {
-                        notifications::log_error(&format!("Failed to save state: {}", e));
-                    }
+                    // Trigger UI update to show Idle state
+                    let _ = this.update(cx, |_, cx| cx.notify());
                 }
             }
         })
