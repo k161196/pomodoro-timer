@@ -2,241 +2,269 @@ use gpui::*;
 use gpui::prelude::*;
 use crate::state::SessionInfo;
 use crate::app::PomodoroApp;
+use crate::theme::Theme;
 
 pub struct CircularTimer {
     session_info: SessionInfo,
-    sessions_until_long_break: u32,
-    total_duration_secs: u32,
     label_input: String,
     is_editing_label: bool,
     view: Entity<PomodoroApp>,
+    theme: Theme,
 }
 
 impl CircularTimer {
     pub fn new(
         session_info: SessionInfo,
-        sessions_until_long_break: u32,
-        total_duration_secs: u32,
+        _sessions_until_long_break: u32,
+        _total_duration_secs: u32,
         label_input: String,
         is_editing_label: bool,
         view: Entity<PomodoroApp>,
+        theme: Theme,
     ) -> Self {
         Self {
             session_info,
-            sessions_until_long_break,
-            total_duration_secs,
             label_input,
             is_editing_label,
             view,
+            theme,
         }
     }
 
-    fn render_progress_ring(&self) -> impl IntoElement {
-        let progress = self.session_info.progress_percentage(self.total_duration_secs);
-        let color = self.session_info.current_state.color_hex();
-
-        // Outer container for the circular progress
+    fn render_active_timer(&self) -> impl IntoElement {
         div()
-            .relative()
-            .size(px(200.0))
             .flex()
+            .flex_col()
             .items_center()
-            .justify_center()
-            // Background circle (gray track)
+            .gap_2()
+            .w_full()
+            // Focus/Rest tabs at top
+            .child(self.render_tabs())
+            // Compact time display
             .child(
                 div()
-                    .absolute()
-                    .size(px(200.0))
-                    .rounded_full()
-                    .border_8()
-                    .border_color(rgb(0x374151))
+                    .text_size(px(48.0))
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(self.theme.foreground)
+                    .child(self.session_info.format_time())
             )
-            // Progress circle (colored arc)
-            .child(self.render_progress_arc(progress, color))
-            // Center content
+            // Label in center (editable)
+            .child(self.render_label_field())
+            // Control buttons at bottom
+            .child(self.render_control_buttons())
+    }
+
+    fn render_label_field(&self) -> impl IntoElement {
+        let view = self.view.clone();
+
+        div()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap_1()
             .child(
+                // Label display/input
                 div()
-                    .flex()
-                    .flex_col()
-                    .items_center()
-                    .justify_center()
-                    .gap_3()
+                    .px_2()
+                    .py_1()
+                    .rounded(px(6.0))
+                    .min_w(px(120.0))
+                    .when(self.is_editing_label, |d| {
+                        d.bg(rgb(0xeff6ff))
+                           .border_1()
+                           .border_color(rgb(0x3b82f6))
+                    })
+                    .when(!self.is_editing_label, |d| {
+                        d.bg(self.theme.muted_background)
+                    })
+                    .text_size(px(13.0))
+                    .text_color(self.theme.muted_foreground)
+                    .text_align(TextAlign::Center)
                     .child(
-                        // Time display
-                        div()
-                            .text_size(px(36.0))
-                            .font_weight(FontWeight::BOLD)
-                            .text_color(rgb(0xffffff))
-                            .child(self.session_info.format_time())
-                    )
-                    .child(
-                        // Label and edit/done button row
-                        div()
-                            .flex()
-                            .flex_row()
-                            .items_center()
-                            .gap_2()
-                            .child(
-                                // Editable label display
-                                div()
-                                    .px_3()
-                                    .py_1()
-                                    .rounded(px(4.0))
-                                    .border_2()
-                                    .when(self.is_editing_label, |div| {
-                                        div.bg(rgb(0x1f2937))  // Darker background when editing
-                                           .border_color(rgb(0x3b82f6))  // Blue border when editing
-                                    })
-                                    .when(!self.is_editing_label, |div| {
-                                        div.bg(rgb(0x374151))  // Normal background
-                                           .border_color(rgb(0x4b5563))  // Gray border
-                                    })
-                                    .text_sm()
-                                    .text_color(rgb(0xe5e7eb))
-                                    .text_align(TextAlign::Center)
-                                    .min_w(px(100.0))
-                                    .child(
-                                        if self.is_editing_label {
-                                            // Editing mode - show input with cursor
-                                            if self.label_input.is_empty() {
-                                                "|".to_string()
-                                            } else {
-                                                format!("{}|", self.label_input)
-                                            }
-                                        } else if self.session_info.current_label.is_empty() {
-                                            // Not editing, no label - show placeholder
-                                            "...".to_string()
-                                        } else {
-                                            // Not editing, has label - show label
-                                            self.session_info.current_label.clone()
-                                        }
-                                    )
-                            )
-                            .child(
-                                // Edit/Done button
-                                self.render_edit_done_button()
-                            )
-                    )
-                    .child(
-                        // Play/Pause button below label
-                        if let Some(button) = self.render_play_pause_button() {
-                            button.into_any_element()
+                        if self.is_editing_label {
+                            if self.label_input.is_empty() {
+                                "|".to_string()
+                            } else {
+                                format!("{}|", self.label_input)
+                            }
+                        } else if self.session_info.current_label.is_empty() {
+                            "Add label...".to_string()
                         } else {
-                            div().into_any_element()
+                            self.session_info.current_label.clone()
                         }
                     )
             )
+            .child(
+                // Edit/Done button
+                if self.is_editing_label {
+                    let view_clone = view.clone();
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .size(px(24.0))
+                        .rounded(px(6.0))
+                        .bg(rgb(0x10b981))  // Green
+                        .text_color(rgb(0xffffff))
+                        .text_xs()
+                        .cursor_pointer()
+                        .hover(|style| style.bg(rgb(0x059669)))
+                        .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
+                            cx.update_entity(&view_clone, |app, cx| {
+                                app.handle_done_label(cx);
+                            });
+                        })
+                        .child("✓")
+                } else {
+                    let view_clone = view.clone();
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .size(px(24.0))
+                        .rounded(px(6.0))
+                        .bg(self.theme.secondary)
+                        .text_color(self.theme.secondary_foreground)
+                        .text_xs()
+                        .cursor_pointer()
+                        .hover(|style| style.bg(rgb(0xd1d5db)))
+                        .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
+                            cx.update_entity(&view_clone, |app, cx| {
+                                app.handle_edit_label(cx);
+                            });
+                        })
+                        .child("✎")
+                }
+            )
     }
 
-    fn render_progress_arc(&self, progress: f32, color: u32) -> impl IntoElement {
-        // For now, we'll use a simple border overlay with opacity
-        // A proper SVG arc would be better, but GPUI's canvas API is limited
-        let opacity = (progress / 100.0).min(1.0);
-
-        div()
-            .absolute()
-            .size(px(200.0))
-            .rounded_full()
-            .border_8()
-            .border_color(rgb(color))
-            .opacity(opacity)
-    }
-
-    fn render_edit_done_button(&self) -> impl IntoElement {
+    fn render_tabs(&self) -> impl IntoElement {
+        let is_work = self.session_info.is_focus_mode;
         let view = self.view.clone();
 
-        if self.is_editing_label {
-            // Show Done button
-            div()
-                .flex()
-                .items_center()
-                .justify_center()
-                .px_2()
-                .py_1()
-                .rounded(px(4.0))
-                .bg(rgb(0x10b981))  // Green
-                .text_color(rgb(0xffffff))
-                .text_xs()
-                .font_weight(FontWeight::BOLD)
-                .cursor_pointer()
-                .hover(|style| style.opacity(0.8))
-                .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
-                    cx.update_entity(&view, |app, cx| {
-                        app.handle_done_label(cx);
-                    });
-                })
-                .child("✓")
-        } else {
-            // Show Edit button
-            div()
-                .flex()
-                .items_center()
-                .justify_center()
-                .px_2()
-                .py_1()
-                .rounded(px(4.0))
-                .bg(rgb(0x6b7280))  // Gray
-                .text_color(rgb(0xffffff))
-                .text_xs()
-                .font_weight(FontWeight::BOLD)
-                .cursor_pointer()
-                .hover(|style| style.opacity(0.8))
-                .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
-                    cx.update_entity(&view, |app, cx| {
-                        app.handle_edit_label(cx);
-                    });
-                })
-                .child("✎")
-        }
-    }
-
-    fn render_play_pause_button(&self) -> Option<impl IntoElement> {
-        let is_idle = matches!(self.session_info.current_state, crate::state::TimerState::Idle);
-        let is_running = self.session_info.current_state.is_running();
-
-        if !is_idle {
-            let button_text = if is_running { "||" } else { "▶" };
-            let button_color = if is_running { 0xf59e0b } else { 0x10b981 };
-            let view = self.view.clone();
-
-            Some(
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .size(px(36.0))
-                    .rounded_full()
-                    .bg(rgb(button_color))
-                    .text_color(rgb(0xffffff))
-                    .text_size(px(14.0))
-                    .font_weight(FontWeight::BOLD)
-                    .cursor_pointer()
-                    .hover(|style| style.opacity(0.8))
-                    .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
-                        cx.update_entity(&view, |app, cx| {
-                            app.handle_toggle(cx);
-                        });
-                    })
-                    .child(button_text.to_string())
-            )
-        } else {
-            None
-        }
-    }
-
-    fn render_button(&self, label: &str, color: u32) -> impl IntoElement {
         div()
-            .px_4()
-            .py_2()
-            .rounded(px(8.0))
-            .bg(rgb(color))
-            .text_sm()
-            .font_weight(FontWeight::MEDIUM)
-            .text_color(rgb(0xffffff))
-            .cursor_pointer()
-            .hover(|style| style.opacity(0.8))
-            .child(label.to_string())
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap_2()
+            .p_1()
+            .bg(self.theme.muted_background)
+            .rounded(px(12.0))
+            .child(
+                // Focus tab
+                {
+                    let view_clone = view.clone();
+                    div()
+                        .px_3()
+                        .py_1()
+                        .rounded(px(8.0))
+                        .when(is_work, |div| {
+                            div.bg(self.theme.background)
+                               .shadow_sm()
+                        })
+                        .text_xs()
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(if is_work { self.theme.foreground } else { self.theme.muted_foreground })
+                        .cursor_pointer()
+                        .hover(|style| style.opacity(0.8))
+                        .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
+                            cx.update_entity(&view_clone, |app, cx| {
+                                app.handle_switch_to_focus(cx);
+                            });
+                        })
+                        .child("Focus")
+                }
+            )
+            .child(
+                // Rest tab
+                {
+                    let view_clone = view.clone();
+                    div()
+                        .px_3()
+                        .py_1()
+                        .rounded(px(8.0))
+                        .when(!is_work, |div| {
+                            div.bg(self.theme.background)
+                               .shadow_sm()
+                        })
+                        .text_xs()
+                        .font_weight(FontWeight::MEDIUM)
+                        .text_color(if !is_work { self.theme.foreground } else { self.theme.muted_foreground })
+                        .cursor_pointer()
+                        .hover(|style| style.opacity(0.8))
+                        .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
+                            cx.update_entity(&view_clone, |app, cx| {
+                                app.handle_switch_to_rest(cx);
+                            });
+                        })
+                        .child("Rest")
+                }
+            )
     }
+
+
+    fn render_control_buttons(&self) -> impl IntoElement {
+        let is_running = self.session_info.current_state.is_running();
+        let view = self.view.clone();
+
+        div()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap_2()
+            .child(
+                // Start/Pause button
+                {
+                    let button_text = if is_running { "Pause" } else { "Start" };
+                    let view_clone = view.clone();
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .px_4()
+                        .py_1()
+                        .rounded(px(6.0))
+                        .bg(self.theme.secondary)
+                        .text_color(self.theme.secondary_foreground)
+                        .text_xs()
+                        .font_weight(FontWeight::MEDIUM)
+                        .cursor_pointer()
+                        .hover(|style| style.opacity(0.8))
+                        .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
+                            cx.update_entity(&view_clone, |app, cx| {
+                                app.handle_toggle(cx);
+                            });
+                        })
+                        .child(button_text)
+                }
+            )
+            .child(
+                // Reset button
+                {
+                    let view_clone = view.clone();
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .px_4()
+                        .py_1()
+                        .rounded(px(6.0))
+                        .bg(self.theme.secondary)
+                        .text_color(self.theme.secondary_foreground)
+                        .text_xs()
+                        .font_weight(FontWeight::MEDIUM)
+                        .cursor_pointer()
+                        .hover(|style| style.opacity(0.8))
+                        .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
+                            cx.update_entity(&view_clone, |app, cx| {
+                                app.handle_reset(cx);
+                            });
+                        })
+                        .child("Reset")
+                }
+            )
+    }
+
 
     fn render_idle_state(&self) -> impl IntoElement {
         let view = self.view.clone();
@@ -245,44 +273,44 @@ impl CircularTimer {
             .flex()
             .flex_col()
             .items_center()
-            .justify_center()
-            .gap_4()
+            .gap_2()
+            .w_full()
+            // Focus/Rest tabs at top
+            .child(self.render_tabs())
+            // Compact time display
             .child(
                 div()
-                    .size(px(160.0))
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded_full()
-                    .border_8()
-                    .border_color(rgb(0x374151))
-                    .cursor_pointer()
-                    .hover(|style| style.border_color(rgb(0x4b5563)))
-                    .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
-                        cx.update_entity(&view, |app, cx| {
-                            app.handle_toggle(cx);
-                        });
-                    })
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .items_center()
-                            .gap_2()
-                            .child(
-                                div()
-                                    .text_size(px(24.0))
-                                    .font_weight(FontWeight::BOLD)
-                                    .text_color(rgb(0x9ca3af))
-                                    .child("00:00")
-                            )
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .text_color(rgb(0x6b7280))
-                                    .child("Tap to start")
-                            )
-                    )
+                    .text_size(px(48.0))
+                    .font_weight(FontWeight::BOLD)
+                    .text_color(self.theme.foreground)
+                    .child(self.session_info.format_time())
+            )
+            // Label in center (editable)
+            .child(self.render_label_field())
+            // Start button
+            .child(
+                {
+                    let view_clone = view.clone();
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .px_4()
+                        .py_1()
+                        .rounded(px(6.0))
+                        .bg(rgb(0xe5e7eb))
+                        .text_color(rgb(0x374151))
+                        .text_xs()
+                        .font_weight(FontWeight::MEDIUM)
+                        .cursor_pointer()
+                        .hover(|style| style.bg(rgb(0xd1d5db)))
+                        .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
+                            cx.update_entity(&view_clone, |app, cx| {
+                                app.handle_toggle(cx);
+                            });
+                        })
+                        .child("Start")
+                }
             )
     }
 }
@@ -300,13 +328,16 @@ impl IntoElement for CircularTimer {
             .flex_col()
             .items_center()
             .justify_center()
-            .gap_6()
-            .bg(rgb(0x111827))
+            .p_3()  // Minimal padding for compact 240x240
+            .bg(self.theme.background)
+            .rounded(px(16.0))  // Smaller rounded corners
+            .border_2()
+            .border_color(self.theme.border)
             .when(is_idle, |div| {
                 div.child(self.render_idle_state())
             })
             .when(!is_idle, |div| {
-                div.child(self.render_progress_ring())
+                div.child(self.render_active_timer())
             })
     }
 }

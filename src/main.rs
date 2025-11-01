@@ -5,10 +5,11 @@ mod config;
 mod notifications;
 mod persistence;
 mod state;
+mod theme;
 mod timer;
 mod ui;
 
-use app::{PomodoroApp, QuitApp, ResetTimer, SkipSession, ToggleTimer, NewTimer, NavigateHistoryPrev, NavigateHistoryNext};
+use app::{PomodoroApp, QuitApp};
 use config::Config;
 
 fn main() {
@@ -36,7 +37,7 @@ fn main() {
         ]);
 
         // Other shortcuts will be bound contextually in render to respect edit mode
-        // Set window size and position - just enough for the circle
+        // Set window size and position - compact square
         let window_size = size(px(240.0), px(240.0));
         let centered_bounds = Bounds::centered(None, window_size, cx);
 

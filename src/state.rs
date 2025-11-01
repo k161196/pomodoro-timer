@@ -23,13 +23,6 @@ pub enum TimerState {
 }
 
 impl TimerState {
-    pub fn is_paused(&self) -> bool {
-        matches!(
-            self,
-            TimerState::WorkPaused | TimerState::BreakPaused | TimerState::LongBreakPaused
-        )
-    }
-
     pub fn is_running(&self) -> bool {
         matches!(
             self,
@@ -39,16 +32,6 @@ impl TimerState {
 
     pub fn is_work(&self) -> bool {
         matches!(self, TimerState::Working | TimerState::WorkPaused)
-    }
-
-    pub fn is_break(&self) -> bool {
-        matches!(
-            self,
-            TimerState::ShortBreak
-                | TimerState::BreakPaused
-                | TimerState::LongBreak
-                | TimerState::LongBreakPaused
-        )
     }
 
     pub fn pause(&self) -> Option<TimerState> {
@@ -78,23 +61,14 @@ impl TimerState {
         }
     }
 
-    pub fn color_hex(&self) -> u32 {
-        match self {
-            TimerState::Idle => 0x6b7280,           // Gray
-            TimerState::Working => 0xef4444,        // Red
-            TimerState::WorkPaused => 0x9ca3af,     // Light gray
-            TimerState::ShortBreak => 0x10b981,     // Green
-            TimerState::BreakPaused => 0x9ca3af,    // Light gray
-            TimerState::LongBreak => 0x3b82f6,      // Blue
-            TimerState::LongBreakPaused => 0x9ca3af, // Light gray
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionInfo {
     pub current_state: TimerState,
     pub time_remaining_secs: u32,
+    pub rest_time_remaining_secs: u32, // Separate timer for rest mode
+    pub is_focus_mode: bool,       // true = focus/work, false = rest/break
     pub current_session: u32,      // Current session number (1-4)
     pub completed_sessions: u32,   // Total completed today
     pub last_updated: DateTime<Utc>,
@@ -109,6 +83,8 @@ impl SessionInfo {
         Self {
             current_state: TimerState::Idle,
             time_remaining_secs: 0,
+            rest_time_remaining_secs: 0,
+            is_focus_mode: true,  // Default to focus mode
             current_session: 1,
             completed_sessions: 0,
             last_updated: Utc::now(),
@@ -135,16 +111,9 @@ impl SessionInfo {
         self.current_id = Uuid::new_v4().to_string();
     }
 
-    pub fn is_viewing_history(&self) -> bool {
-        self.history_index.is_some()
-    }
 
-    pub fn get_displayed_timer(&self) -> Option<&CompletedTimer> {
-        if let Some(index) = self.history_index {
-            self.history.get(index)
-        } else {
-            None
-        }
+    pub fn exit_history(&mut self) {
+        self.history_index = None;
     }
 
     pub fn navigate_history_prev(&mut self) {
@@ -159,52 +128,22 @@ impl SessionInfo {
         });
     }
 
-    pub fn navigate_history_next(&mut self) {
-        if self.history.is_empty() {
-            return;
-        }
-
-        self.history_index = Some(match self.history_index {
-            None => 0,
-            Some(i) if i >= self.history.len() - 1 => 0,
-            Some(i) => i + 1,
-        });
-    }
-
-    pub fn exit_history(&mut self) {
-        self.history_index = None;
-    }
-
-    pub fn session_label(&self, sessions_until_long_break: u32) -> String {
-        match self.current_state {
-            TimerState::Working | TimerState::WorkPaused => {
-                format!("Session {}/{}", self.current_session, sessions_until_long_break)
-            }
-            TimerState::ShortBreak | TimerState::BreakPaused => {
-                "Short Break".to_string()
-            }
-            TimerState::LongBreak | TimerState::LongBreakPaused => {
-                "Long Break".to_string()
-            }
-            TimerState::Idle => {
-                format!("Session {}/{}", self.current_session, sessions_until_long_break)
-            }
+    pub fn get_active_time(&self) -> u32 {
+        // Use is_focus_mode to determine which timer to show
+        if self.is_focus_mode {
+            self.time_remaining_secs
+        } else {
+            self.rest_time_remaining_secs
         }
     }
 
     pub fn format_time(&self) -> String {
-        let minutes = self.time_remaining_secs / 60;
-        let seconds = self.time_remaining_secs % 60;
+        let time = self.get_active_time();
+        let minutes = time / 60;
+        let seconds = time % 60;
         format!("{:02}:{:02}", minutes, seconds)
     }
 
-    pub fn progress_percentage(&self, total_duration_secs: u32) -> f32 {
-        if total_duration_secs == 0 {
-            return 0.0;
-        }
-        let elapsed = total_duration_secs.saturating_sub(self.time_remaining_secs);
-        (elapsed as f32 / total_duration_secs as f32) * 100.0
-    }
 }
 
 impl Default for SessionInfo {

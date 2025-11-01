@@ -47,12 +47,4 @@ impl Persistence {
         Ok(())
     }
 
-    pub fn clear() -> Result<()> {
-        let state_path = Self::state_path()?;
-        if state_path.exists() {
-            fs::remove_file(&state_path)
-                .context("Failed to remove state file")?;
-        }
-        Ok(())
-    }
 }

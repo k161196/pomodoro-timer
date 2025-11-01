@@ -20,23 +20,25 @@ impl Timer {
     pub async fn start_work(&self) {
         let mut info = self.session_info.lock().await;
         info.current_state = TimerState::Working;
-        info.time_remaining_secs = self.config.work_duration_secs();
+        info.is_focus_mode = true;
+        // Initialize work timer if not already set
+        if info.time_remaining_secs == 0 {
+            info.time_remaining_secs = self.config.work_duration_secs();
+        }
         info.last_updated = Utc::now();
     }
 
     pub async fn start_short_break(&self) {
         let mut info = self.session_info.lock().await;
         info.current_state = TimerState::ShortBreak;
-        info.time_remaining_secs = self.config.short_break_duration_secs();
+        info.is_focus_mode = false;
+        // Initialize rest timer if not already set
+        if info.rest_time_remaining_secs == 0 {
+            info.rest_time_remaining_secs = self.config.short_break_duration_secs();
+        }
         info.last_updated = Utc::now();
     }
 
-    pub async fn start_long_break(&self) {
-        let mut info = self.session_info.lock().await;
-        info.current_state = TimerState::LongBreak;
-        info.time_remaining_secs = self.config.long_break_duration_secs();
-        info.last_updated = Utc::now();
-    }
 
     pub async fn pause(&self) {
         let mut info = self.session_info.lock().await;
@@ -56,45 +58,20 @@ impl Timer {
 
     pub async fn reset(&self) {
         let mut info = self.session_info.lock().await;
-        info.current_state = TimerState::Idle;
-        info.time_remaining_secs = 0;
-        info.last_updated = Utc::now();
-    }
 
-    pub async fn skip_to_next(&self) {
-        let mut info = self.session_info.lock().await;
-
-        match info.current_state {
-            TimerState::Working | TimerState::WorkPaused => {
-                // Work session completed, move to break
-                info.completed_sessions += 1;
-
-                // Check if we should do long break
-                if info.current_session >= self.config.sessions_until_long_break {
-                    info.current_state = TimerState::LongBreak;
-                    info.time_remaining_secs = self.config.long_break_duration_secs();
-                    info.current_session = 1; // Reset to session 1
-                } else {
-                    info.current_state = TimerState::ShortBreak;
-                    info.time_remaining_secs = self.config.short_break_duration_secs();
-                    info.current_session += 1; // Increment for next work session
-                }
-            }
-            TimerState::ShortBreak | TimerState::BreakPaused |
-            TimerState::LongBreak | TimerState::LongBreakPaused => {
-                // Break completed, move to work
-                info.current_state = TimerState::Working;
-                info.time_remaining_secs = self.config.work_duration_secs();
-            }
-            TimerState::Idle => {
-                // From idle, start first work session
-                info.current_state = TimerState::Working;
-                info.time_remaining_secs = self.config.work_duration_secs();
-                info.current_session = 1;
-            }
+        // Reset only the current timer based on current state
+        if info.current_state.is_work() || info.current_state == TimerState::Idle {
+            // Reset focus timer
+            info.time_remaining_secs = self.config.work_duration_secs();
+        } else {
+            // Reset rest timer
+            info.rest_time_remaining_secs = self.config.short_break_duration_secs();
         }
 
+        // Set to Idle but stay in same mode (focus/rest)
+        info.current_state = TimerState::Idle;
         info.last_updated = Utc::now();
     }
+
 
 }

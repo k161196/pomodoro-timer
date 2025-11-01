@@ -7,6 +7,7 @@ use crate::config::Config;
 use crate::notifications;
 use crate::persistence::Persistence;
 use crate::state::{SessionInfo, TimerState};
+use crate::theme::{Theme, ThemeMode};
 use crate::timer::Timer;
 use crate::ui::CircularTimer;
 
@@ -25,13 +26,26 @@ impl PomodoroApp {
     pub fn new(config: Config, cx: &mut Context<'_, Self>) -> Self {
         // Load persisted state
         let session_info = match Persistence::load() {
-            Ok(info) => {
+            Ok(mut info) => {
                 notifications::log_info("Loaded persisted timer state");
+                // Initialize timers from config if they're at 0
+                if info.time_remaining_secs == 0 {
+                    info.time_remaining_secs = config.work_duration_secs();
+                }
+                if info.rest_time_remaining_secs == 0 {
+                    info.rest_time_remaining_secs = config.short_break_duration_secs();
+                }
+                // Set focus mode based on current state
+                info.is_focus_mode = info.current_state.is_work() || info.current_state == TimerState::Idle;
                 Arc::new(Mutex::new(info))
             }
             Err(e) => {
                 notifications::log_error(&format!("Failed to load state: {}", e));
-                Arc::new(Mutex::new(SessionInfo::new()))
+                let mut info = SessionInfo::new();
+                // Initialize both timers with config values
+                info.time_remaining_secs = config.work_duration_secs();
+                info.rest_time_remaining_secs = config.short_break_duration_secs();
+                Arc::new(Mutex::new(info))
             }
         };
 
@@ -51,10 +65,25 @@ impl PomodoroApp {
                     let mut info = session_info_for_tick.lock().await;
                     let is_running = info.current_state.is_running();
 
-                    let just_completed = if is_running && info.time_remaining_secs > 0 {
-                        info.time_remaining_secs -= 1;
-                        info.last_updated = Utc::now();
-                        info.time_remaining_secs == 0
+                    let just_completed = if is_running {
+                        // Decrement the appropriate timer based on current state
+                        if info.current_state.is_work() {
+                            if info.time_remaining_secs > 0 {
+                                info.time_remaining_secs -= 1;
+                                info.last_updated = Utc::now();
+                                info.time_remaining_secs == 0
+                            } else {
+                                false
+                            }
+                        } else {
+                            if info.rest_time_remaining_secs > 0 {
+                                info.rest_time_remaining_secs -= 1;
+                                info.last_updated = Utc::now();
+                                info.rest_time_remaining_secs == 0
+                            } else {
+                                false
+                            }
+                        }
                     } else {
                         false
                     };
@@ -155,16 +184,21 @@ impl PomodoroApp {
         let session_info = self.session_info.clone();
 
         cx.spawn(async move |this, cx| {
-            let current_state = {
+            let (current_state, is_focus_mode) = {
                 let info = session_info.lock().await;
-                info.current_state.clone()
+                (info.current_state.clone(), info.is_focus_mode)
             };
 
             match current_state {
                 TimerState::Idle => {
-                    // Start first work session
-                    timer.start_work().await;
-                    notifications::log_info("Started work session");
+                    // Start based on current mode (focus or rest)
+                    if is_focus_mode {
+                        timer.start_work().await;
+                        notifications::log_info("Started work session");
+                    } else {
+                        timer.start_short_break().await;
+                        notifications::log_info("Started rest session");
+                    }
                 }
                 TimerState::Working | TimerState::ShortBreak | TimerState::LongBreak => {
                     // Pause
@@ -227,33 +261,6 @@ impl PomodoroApp {
         .detach();
     }
 
-    pub fn handle_navigate_history_prev(&mut self, cx: &mut Context<'_, Self>) {
-        let session_info = self.session_info.clone();
-
-        cx.spawn(async move |this, cx| {
-            {
-                let mut info = session_info.lock().await;
-                info.navigate_history_prev();
-            }
-
-            let _ = this.update(cx, |_, cx| cx.notify());
-        })
-        .detach();
-    }
-
-    pub fn handle_navigate_history_next(&mut self, cx: &mut Context<'_, Self>) {
-        let session_info = self.session_info.clone();
-
-        cx.spawn(async move |this, cx| {
-            {
-                let mut info = session_info.lock().await;
-                info.navigate_history_next();
-            }
-
-            let _ = this.update(cx, |_, cx| cx.notify());
-        })
-        .detach();
-    }
 
     pub fn handle_reset(&mut self, cx: &mut Context<'_, Self>) {
         let timer = self.timer.clone();
@@ -262,6 +269,82 @@ impl PomodoroApp {
         cx.spawn(async move |this, cx| {
             timer.reset().await;
             notifications::log_info("Reset timer");
+
+            // Save state
+            let info = session_info.lock().await;
+            if let Err(e) = Persistence::save(&info) {
+                notifications::log_error(&format!("Failed to save state: {}", e));
+            }
+
+            // Trigger UI update
+            let _ = this.update(cx, |_, cx| cx.notify());
+        })
+        .detach();
+    }
+
+    pub fn handle_switch_to_focus(&mut self, cx: &mut Context<'_, Self>) {
+        let session_info = self.session_info.clone();
+        let config = self.config.clone();
+
+        cx.spawn(async move |this, cx| {
+            {
+                let mut info = session_info.lock().await;
+
+                // Only proceed if we're NOT already in focus mode
+                if info.is_focus_mode {
+                    return;
+                }
+
+                // Initialize work timer if it's at 0
+                if info.time_remaining_secs == 0 {
+                    info.time_remaining_secs = config.work_duration_secs();
+                }
+
+                // Switch to focus mode and idle state, preserving the timer value
+                info.is_focus_mode = true;
+                info.current_state = TimerState::Idle;
+                info.last_updated = chrono::Utc::now();
+            }
+
+            notifications::log_info("Switched to focus mode");
+
+            // Save state
+            let info = session_info.lock().await;
+            if let Err(e) = Persistence::save(&info) {
+                notifications::log_error(&format!("Failed to save state: {}", e));
+            }
+
+            // Trigger UI update
+            let _ = this.update(cx, |_, cx| cx.notify());
+        })
+        .detach();
+    }
+
+    pub fn handle_switch_to_rest(&mut self, cx: &mut Context<'_, Self>) {
+        let session_info = self.session_info.clone();
+        let config = self.config.clone();
+
+        cx.spawn(async move |this, cx| {
+            {
+                let mut info = session_info.lock().await;
+
+                // Only proceed if we're NOT already in rest mode
+                if !info.is_focus_mode {
+                    return;
+                }
+
+                // Initialize rest timer if it's at 0
+                if info.rest_time_remaining_secs == 0 {
+                    info.rest_time_remaining_secs = config.short_break_duration_secs();
+                }
+
+                // Switch to rest mode and idle state, preserving the timer value
+                info.is_focus_mode = false;
+                info.current_state = TimerState::Idle;
+                info.last_updated = chrono::Utc::now();
+            }
+
+            notifications::log_info("Switched to rest mode");
 
             // Save state
             let info = session_info.lock().await;
@@ -374,13 +457,20 @@ impl Render for PomodoroApp {
             .on_action(|_: &QuitApp, _window, cx| {
                 cx.quit();
             })
-            .child(CircularTimer::new(
-                session_info,
-                self.config.sessions_until_long_break,
-                total_duration,
-                self.label_input.clone(),
-                is_editing,
-                view_for_ui,
-            ))
+            .child({
+                let appearance = window.appearance();
+                let theme_mode = ThemeMode::from_appearance(appearance);
+                let theme = Theme::from_mode(theme_mode);
+
+                CircularTimer::new(
+                    session_info,
+                    self.config.sessions_until_long_break,
+                    total_duration,
+                    self.label_input.clone(),
+                    is_editing,
+                    view_for_ui,
+                    theme,
+                )
+            })
     }
 }
