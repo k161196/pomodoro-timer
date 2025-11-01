@@ -27,7 +27,32 @@ cd ~/projects/pomodoro-timer
 cargo build --release
 ```
 
-### 2. Configure Hyprland (Optional but Recommended)
+### 2. Install Desktop File (Optional)
+
+Create a desktop entry for easy launching:
+
+**Create the file:** `~/.local/share/applications/pomodoro-timer.desktop`
+
+```desktop
+[Desktop Entry]
+Name=Pomodoro Timer
+Comment=A minimalist Pomodoro timer built with Rust and GPUI
+Exec=/home/YOUR_USERNAME/projects/pomodoro-timer/target/release/pomodoro-timer
+Icon=clock
+Type=Application
+Categories=Utility;
+Terminal=false
+StartupWMClass=pomodoro-timer
+```
+
+**Note:** Replace `/home/YOUR_USERNAME/` with your actual home path or use `~/projects/pomodoro-timer/target/release/pomodoro-timer`.
+
+After creating the file, update the desktop database:
+```bash
+update-desktop-database ~/.local/share/applications/
+```
+
+### 3. Configure Hyprland (Optional but Recommended)
 
 Add the following to your Hyprland config (`~/.config/hypr/hyprland.conf`) for the best experience:
 
@@ -39,7 +64,7 @@ windowrulev2 = center, class:^(pomodoro-timer)$
 windowrulev2 = noborder, class:^(pomodoro-timer)$
 windowrulev2 = noshadow, class:^(pomodoro-timer)$
 windowrulev2 = pin, class:^(pomodoro-timer)$           # Pin to all workspaces
-windowrulev2 = stayfocused, class:^(pomodoro-timer)$  # Keep on top
+windowrulev2 = noblur, class:^(pomodoro-timer)$
 
 # Optional: Add a keybind to launch
 bind = SUPER, P, exec, ~/projects/pomodoro-timer/target/release/pomodoro-timer
@@ -47,13 +72,13 @@ bind = SUPER, P, exec, ~/projects/pomodoro-timer/target/release/pomodoro-timer
 
 **What these rules do:**
 - `float` - Makes the window float above other windows
-- `size 240 240` - Sets the window size (compact circle)
+- `size 240 240` - Sets the window size to 240x240 pixels (compact square)
 - `center` - Centers the window on screen
 - `noborder` / `noshadow` - Removes decorations for a clean look
 - `pin` - **Pins the window to all workspaces** (stays visible when switching workspaces)
-- `stayfocused` - Keeps the window on top of other windows
+- `noblur` - Disables background blur for better performance
 
-### 3. Run
+### 4. Run
 
 ```bash
 ./target/release/pomodoro-timer
