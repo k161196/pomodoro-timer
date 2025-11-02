@@ -20,6 +20,7 @@ pub struct PomodoroApp {
     focus_handle: FocusHandle,
     label_input: String,  // Current text in label input field
     is_editing_label: bool,  // True when actively editing label
+    show_preset_menu: bool,  // True when preset timer menu is visible
 }
 
 impl PomodoroApp {
@@ -175,6 +176,7 @@ impl PomodoroApp {
             focus_handle: cx.focus_handle(),
             label_input: String::new(),
             is_editing_label: false,
+            show_preset_menu: false,
         }
     }
 
@@ -437,6 +439,47 @@ impl PomodoroApp {
         cx.notify();
     }
 
+    pub fn handle_toggle_preset_menu(&mut self, cx: &mut Context<'_, Self>) {
+        self.show_preset_menu = !self.show_preset_menu;
+        cx.notify();
+    }
+
+    pub fn handle_close_preset_menu(&mut self, cx: &mut Context<'_, Self>) {
+        if self.show_preset_menu {
+            self.show_preset_menu = false;
+            cx.notify();
+        }
+    }
+
+    pub fn handle_set_preset_timer(&mut self, minutes: u32, cx: &mut Context<'_, Self>) {
+        let session_info = self.session_info.clone();
+
+        cx.spawn(async move |_this, cx| {
+            {
+                let mut info = session_info.lock();
+
+                // Set timer to preset duration (in seconds)
+                info.time_remaining_secs = minutes * 60;
+                info.current_state = TimerState::Idle;
+                info.is_focus_mode = true;
+                info.last_updated = Utc::now();
+            }
+
+            // Save state
+            let info = session_info.lock();
+            if let Err(e) = Persistence::save(&info) {
+                notifications::log_error(&format!("Failed to save state: {}", e));
+            }
+
+            // Trigger UI update and close menu
+            let _ = cx.update(|_cx| {});
+        }).detach();
+
+        // Close the preset menu
+        self.show_preset_menu = false;
+        cx.notify();
+    }
+
     fn get_total_duration(&self, state: &TimerState) -> u32 {
         match state {
             TimerState::Working | TimerState::WorkPaused => self.config.work_duration_secs(),
@@ -464,6 +507,7 @@ impl Render for PomodoroApp {
         let session_info = self.session_info.lock().clone();
         let total_duration = self.get_total_duration(&session_info.current_state);
         let is_editing = self.is_editing_label;
+        let show_preset_menu = self.show_preset_menu;
 
         div()
             .w_full()
@@ -521,6 +565,7 @@ impl Render for PomodoroApp {
                     total_duration,
                     self.label_input.clone(),
                     is_editing,
+                    show_preset_menu,
                     view_for_ui,
                     theme,
                 )

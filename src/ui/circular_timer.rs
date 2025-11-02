@@ -9,6 +9,7 @@ pub struct CircularTimer {
     session_info: SessionInfo,
     label_input: String,
     is_editing_label: bool,
+    show_preset_menu: bool,
     view: Entity<PomodoroApp>,
     theme: Theme,
 }
@@ -20,6 +21,7 @@ impl CircularTimer {
         _total_duration_secs: u32,
         label_input: String,
         is_editing_label: bool,
+        show_preset_menu: bool,
         view: Entity<PomodoroApp>,
         theme: Theme,
     ) -> Self {
@@ -27,9 +29,54 @@ impl CircularTimer {
             session_info,
             label_input,
             is_editing_label,
+            show_preset_menu,
             view,
             theme,
         }
+    }
+
+    fn render_preset_menu(&self) -> impl IntoElement {
+        let view = self.view.clone();
+        let preset_durations = vec![5, 10, 20, 30];
+
+        // Create a wrapper that captures clicks to prevent closing
+        div()
+            .absolute()
+            .top(px(35.0))
+            .right(px(5.0))
+            .child(
+                div()
+                    .bg(self.theme.background)
+                    .border_2()
+                    .border_color(self.theme.border)
+                    .rounded(px(8.0))
+                    .shadow_lg()
+                    .p_2()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .children(
+                        preset_durations.into_iter().map(|minutes| {
+                            let view_clone = view.clone();
+                            div()
+                                .px_3()
+                                .py_1()
+                                .rounded(px(6.0))
+                                .bg(self.theme.secondary)
+                                .text_color(self.theme.secondary_foreground)
+                                .text_xs()
+                                .font_weight(FontWeight::MEDIUM)
+                                .cursor_pointer()
+                                .hover(|style| style.opacity(0.8))
+                                .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
+                                    cx.update_entity(&view_clone, |app, cx| {
+                                        app.handle_set_preset_timer(minutes, cx);
+                                    });
+                                })
+                                .child(format!("{} min", minutes))
+                        })
+                    )
+            )
     }
 
     fn render_active_timer(&self) -> impl IntoElement {
@@ -201,6 +248,29 @@ impl CircularTimer {
                         .child("Rest")
                 }
             )
+            // Handle icon for preset timers (only in focus mode)
+            .when(is_work, |d| {
+                d.child({
+                    let view_clone = view.clone();
+                    div()
+                        .size(px(20.0))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded(px(6.0))
+                        .bg(self.theme.secondary)
+                        .text_color(self.theme.secondary_foreground)
+                        .text_xs()
+                        .cursor_pointer()
+                        .hover(|style| style.opacity(0.8))
+                        .on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
+                            cx.update_entity(&view_clone, |app, cx| {
+                                app.handle_toggle_preset_menu(cx);
+                            });
+                        })
+                        .child("⋮")
+                })
+            })
     }
 
 
@@ -322,6 +392,7 @@ impl IntoElement for CircularTimer {
     fn into_element(self) -> Self::Element {
         let is_idle = matches!(self.session_info.current_state, crate::state::TimerState::Idle);
         let show_celebration = self.session_info.show_celebration;
+        let show_preset_menu = self.show_preset_menu;
         let view = self.view.clone();
 
         // Build the main content element
@@ -336,7 +407,8 @@ impl IntoElement for CircularTimer {
             .bg(self.theme.background)
             .rounded(px(16.0))  // Smaller rounded corners
             .border_2()
-            .border_color(self.theme.border);
+            .border_color(self.theme.border)
+            .relative();  // Enable absolute positioning for menu
 
         // Add children based on state
         if is_idle {
@@ -345,16 +417,32 @@ impl IntoElement for CircularTimer {
             base_div = base_div.child(self.render_active_timer());
         }
 
-        // Wrap in a container with mouse handler
+        // Add preset menu if visible
+        if show_preset_menu {
+            base_div = base_div.child(self.render_preset_menu());
+        }
+
+        // Wrap in a container with mouse handler and click-outside detection
         // Apply breathing animation conditionally
         if show_celebration {
+            let view_for_mouse = view.clone();
+            let view_for_click = view.clone();
+
             div()
                 .w_full()
                 .h_full()
                 .on_mouse_move(move |_event, _window, cx| {
-                    cx.update_entity(&view, |app, cx| {
+                    cx.update_entity(&view_for_mouse, |app, cx| {
                         app.handle_mouse_over(cx);
                     });
+                })
+                // Close preset menu when clicking outside
+                .when(show_preset_menu, |wrapper| {
+                    wrapper.on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
+                        cx.update_entity(&view_for_click, |app, cx| {
+                            app.handle_close_preset_menu(cx);
+                        });
+                    })
                 })
                 .child(
                     base_div.with_animation(
@@ -372,13 +460,24 @@ impl IntoElement for CircularTimer {
                     )
                 )
         } else {
+            let view_for_mouse = view.clone();
+            let view_for_click = view.clone();
+
             div()
                 .w_full()
                 .h_full()
                 .on_mouse_move(move |_event, _window, cx| {
-                    cx.update_entity(&view, |app, cx| {
+                    cx.update_entity(&view_for_mouse, |app, cx| {
                         app.handle_mouse_over(cx);
                     });
+                })
+                // Close preset menu when clicking outside
+                .when(show_preset_menu, |wrapper| {
+                    wrapper.on_mouse_down(MouseButton::Left, move |_event, _window, cx| {
+                        cx.update_entity(&view_for_click, |app, cx| {
+                            app.handle_close_preset_menu(cx);
+                        });
+                    })
                 })
                 .child(base_div)
         }
